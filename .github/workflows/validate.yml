@@ -5,7 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
+  # fmt/validate runs on OpenTofu to keep the module usable from both CLIs.
   validate:
     runs-on: ubuntu-latest
     steps:
@@ -29,3 +33,37 @@ jobs:
         run: |
           tofu init -backend=false
           tofu validate
+
+  # The .tftest.hcl suite uses `mock_provider`, so it runs on Terraform 1.7+
+  # and needs no AWS credentials.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.15"
+          terraform_wrapper: false
+
+      - name: init
+        run: terraform init -backend=false
+
+      - name: test
+        run: terraform test
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.64.0
+
+      # --recursive re-reads config per directory, so point every pass at the
+      # repo-root .tflint.hcl explicitly.
+      - name: tflint
+        env:
+          TFLINT_CONFIG_FILE: ${{ github.workspace }}/.tflint.hcl
+        run: tflint --recursive
