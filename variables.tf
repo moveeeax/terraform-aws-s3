@@ -11,6 +11,11 @@ variable "bucket" {
     condition     = !can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$", var.bucket))
     error_message = "bucket must not be formatted as an IP address."
   }
+
+  validation {
+    condition     = !can(regex("\\.\\.", var.bucket))
+    error_message = "bucket must not contain two adjacent periods."
+  }
 }
 
 variable "force_destroy" {
@@ -46,6 +51,11 @@ variable "kms_key_id" {
   description = "ARN of the KMS key used when sse_algorithm is aws:kms. Null uses the default S3 KMS key."
   type        = string
   default     = null
+
+  validation {
+    condition     = var.kms_key_id == null || length(trimspace(var.kms_key_id)) > 0
+    error_message = "kms_key_id must not be an empty or whitespace-only string; use null to fall back to the default S3 KMS key."
+  }
 }
 
 variable "bucket_key_enabled" {
@@ -75,6 +85,11 @@ variable "logging_target_bucket" {
   description = "Name of an existing bucket to deliver S3 server access logs to. Null disables access logging."
   type        = string
   default     = null
+
+  validation {
+    condition     = var.logging_target_bucket == null || length(trimspace(var.logging_target_bucket)) > 0
+    error_message = "logging_target_bucket must not be an empty or whitespace-only string; use null to disable access logging."
+  }
 }
 
 variable "logging_target_prefix" {
