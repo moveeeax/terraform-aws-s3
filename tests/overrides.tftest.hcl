@@ -117,6 +117,37 @@ run "rejects_a_bucket_name_shaped_like_an_ip_address" {
   expect_failures = [var.bucket]
 }
 
+run "rejects_a_bucket_name_with_adjacent_periods" {
+  command = plan
+
+  variables {
+    bucket = "not..a.valid.bucket"
+  }
+
+  expect_failures = [var.bucket]
+}
+
+run "rejects_an_empty_kms_key_id" {
+  command = plan
+
+  variables {
+    sse_algorithm = "aws:kms"
+    kms_key_id    = ""
+  }
+
+  expect_failures = [var.kms_key_id]
+}
+
+run "rejects_a_whitespace_only_logging_target_bucket" {
+  command = plan
+
+  variables {
+    logging_target_bucket = "   "
+  }
+
+  expect_failures = [var.logging_target_bucket]
+}
+
 run "rejects_an_unsupported_sse_algorithm" {
   command = plan
 

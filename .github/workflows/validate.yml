@@ -12,6 +12,7 @@ jobs:
   # fmt/validate runs on OpenTofu to keep the module usable from both CLIs.
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +39,7 @@ jobs:
   # and needs no AWS credentials.
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -54,6 +56,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
