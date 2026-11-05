@@ -26,7 +26,7 @@ it on.
 
 ```hcl
 module "s3" {
-  source = "github.com/moveeeax/terraform-aws-s3"
+  source = "github.com/moveeeax/terraform-aws-s3?ref=v1.0.0" # pin to a release tag
 
   bucket             = "prod-app-assets"
   versioning_enabled = true
