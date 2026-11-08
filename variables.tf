@@ -98,6 +98,72 @@ variable "logging_target_prefix" {
   default     = "s3-access-logs/"
 }
 
+variable "lifecycle_rules" {
+  description = "Lifecycle rules for the bucket. Each rule needs a unique id; prefix null matches every object. abort_incomplete_multipart_upload_days defaults to 7, set it to 0 to leave it out. An empty list leaves the bucket's lifecycle configuration unmanaged."
+  type = list(object({
+    id     = string
+    prefix = optional(string)
+    transitions = optional(list(object({
+      days          = number
+      storage_class = string
+    })), [])
+    expiration_days                        = optional(number)
+    noncurrent_version_expiration_days     = optional(number)
+    abort_incomplete_multipart_upload_days = optional(number, 7)
+  }))
+  default  = []
+  nullable = false
+
+  validation {
+    condition     = alltrue([for r in var.lifecycle_rules : length(trimspace(r.id)) > 0 && length(r.id) <= 255])
+    error_message = "Every lifecycle rule id must be 1-255 characters and not whitespace-only."
+  }
+
+  validation {
+    condition     = length(distinct([for r in var.lifecycle_rules : r.id])) == length(var.lifecycle_rules)
+    error_message = "Lifecycle rule ids must be unique."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for r in var.lifecycle_rules : [
+        for t in r.transitions : contains(["GLACIER", "STANDARD_IA", "ONEZONE_IA", "INTELLIGENT_TIERING", "DEEP_ARCHIVE", "GLACIER_IR"], t.storage_class)
+      ]
+    ]))
+    error_message = "Transition storage_class must be one of GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, GLACIER_IR."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for r in var.lifecycle_rules : [
+        for t in r.transitions : t.days >= 0 && floor(t.days) == t.days
+      ]
+    ]))
+    error_message = "Transition days must be a whole number of 0 or more."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for r in var.lifecycle_rules : [
+        for d in [r.expiration_days, r.noncurrent_version_expiration_days] : d == null || (d >= 1 && floor(d) == d)
+      ]
+    ]))
+    error_message = "expiration_days and noncurrent_version_expiration_days must be null or a whole number of 1 or more."
+  }
+
+  validation {
+    condition     = alltrue([for r in var.lifecycle_rules : r.abort_incomplete_multipart_upload_days >= 0 && floor(r.abort_incomplete_multipart_upload_days) == r.abort_incomplete_multipart_upload_days])
+    error_message = "abort_incomplete_multipart_upload_days must be a whole number of 0 or more; 0 leaves the action out."
+  }
+
+  validation {
+    condition = alltrue([
+      for r in var.lifecycle_rules : length(r.transitions) > 0 || r.expiration_days != null || r.noncurrent_version_expiration_days != null || r.abort_incomplete_multipart_upload_days > 0
+    ])
+    error_message = "Every lifecycle rule needs at least one action: a transition, expiration_days, noncurrent_version_expiration_days or abort_incomplete_multipart_upload_days."
+  }
+}
+
 variable "tags" {
   description = "Tags applied to the bucket."
   type        = map(string)

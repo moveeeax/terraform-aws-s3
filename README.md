@@ -62,12 +62,64 @@ A runnable example lives in [`examples/basic`](examples/basic).
 | `bucket_key_enabled`    | Use S3 Bucket Keys to cut KMS request cost. Only applies to SSE-KMS.   | `bool`        | `true`                 |    no    |
 | `logging_target_bucket` | Existing bucket to deliver server access logs to. `null` disables it.  | `string`      | `null`                 |    no    |
 | `logging_target_prefix` | Key prefix for delivered access logs.                                  | `string`      | `"s3-access-logs/"`    |    no    |
+| `lifecycle_rules`       | Lifecycle rules. `[]` leaves the lifecycle configuration unmanaged. See [Lifecycle rules](#lifecycle-rules). | `list(object)` | `[]` | no |
 | `tags`                  | Tags applied to the bucket.                                            | `map(string)` | `{}`                   |    no    |
 
 `enforce_tls` attaches an `aws_s3_bucket_policy` to the bucket. If you manage
 that bucket's policy elsewhere, set `enforce_tls = false` and carry the
 `aws:SecureTransport` deny statement over into your own policy — otherwise the
 two resources will fight over the same bucket.
+
+## Lifecycle rules
+
+Nothing expires by default. With `versioning_enabled = true` that means
+noncurrent versions are kept forever, so log and backup buckets keep growing.
+`lifecycle_rules` adds an `aws_s3_bucket_lifecycle_configuration`:
+
+```hcl
+module "logs" {
+  source = "github.com/moveeeax/terraform-aws-s3" # add ?ref= with the first release that has this input
+
+  bucket = "prod-app-logs"
+
+  lifecycle_rules = [
+    {
+      id     = "logs"
+      prefix = "logs/"
+      transitions = [
+        { days = 30, storage_class = "STANDARD_IA" },
+        { days = 90, storage_class = "GLACIER" },
+      ]
+      expiration_days                    = 365
+      noncurrent_version_expiration_days = 30
+    },
+  ]
+}
+```
+
+Each rule takes:
+
+| Attribute                                | Type           | Default | Notes                                                        |
+|------------------------------------------|----------------|---------|--------------------------------------------------------------|
+| `id`                                     | `string`       | n/a     | Unique within the bucket, 1-255 characters.                  |
+| `prefix`                                 | `string`       | `null`  | Key prefix the rule applies to. `null` matches every object. |
+| `transitions`                            | `list(object)` | `[]`    | `{ days, storage_class }`; `days` counts from object creation. |
+| `expiration_days`                        | `number`       | `null`  | Expire current versions after this many days.                |
+| `noncurrent_version_expiration_days`     | `number`       | `null`  | Delete noncurrent versions this many days after they become noncurrent. |
+| `abort_incomplete_multipart_upload_days` | `number`       | `7`     | Abort unfinished multipart uploads. `0` leaves the action out. |
+
+`storage_class` is one of `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`,
+`GLACIER_IR`, `GLACIER` or `DEEP_ARCHIVE`. Every rule is created with status
+`Enabled` and needs at least one action.
+
+A reasonable starting point for a versioned bucket is a single rule with no
+prefix and `noncurrent_version_expiration_days = 30`; the default 7-day abort
+for multipart uploads rides along.
+
+The lifecycle configuration resource is authoritative: it replaces every
+lifecycle rule on the bucket. That is why the module creates it only when
+`lifecycle_rules` is non-empty. If you manage the bucket's lifecycle rules
+elsewhere, leave the list empty.
 
 ## Outputs
 

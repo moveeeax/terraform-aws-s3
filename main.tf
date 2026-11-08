@@ -103,3 +103,63 @@ resource "aws_s3_bucket_logging" "this" {
   target_bucket = var.logging_target_bucket
   target_prefix = var.logging_target_prefix
 }
+
+# aws_s3_bucket_lifecycle_configuration is authoritative: it replaces every
+# lifecycle rule on the bucket. Only create it when rules are given, so an empty
+# input never wipes rules managed somewhere else.
+resource "aws_s3_bucket_lifecycle_configuration" "this" {
+  count = length(var.lifecycle_rules) > 0 ? 1 : 0
+
+  bucket = aws_s3_bucket.this.id
+
+  dynamic "rule" {
+    for_each = var.lifecycle_rules
+
+    content {
+      id     = rule.value.id
+      status = "Enabled"
+
+      # A null prefix renders an empty filter, which matches every object.
+      filter {
+        prefix = rule.value.prefix
+      }
+
+      dynamic "transition" {
+        for_each = rule.value.transitions
+
+        content {
+          days          = transition.value.days
+          storage_class = transition.value.storage_class
+        }
+      }
+
+      dynamic "expiration" {
+        for_each = rule.value.expiration_days == null ? [] : [rule.value.expiration_days]
+
+        content {
+          days = expiration.value
+        }
+      }
+
+      dynamic "noncurrent_version_expiration" {
+        for_each = rule.value.noncurrent_version_expiration_days == null ? [] : [rule.value.noncurrent_version_expiration_days]
+
+        content {
+          noncurrent_days = noncurrent_version_expiration.value
+        }
+      }
+
+      dynamic "abort_incomplete_multipart_upload" {
+        for_each = rule.value.abort_incomplete_multipart_upload_days == 0 ? [] : [rule.value.abort_incomplete_multipart_upload_days]
+
+        content {
+          days_after_initiation = abort_incomplete_multipart_upload.value
+        }
+      }
+    }
+  }
+
+  # Noncurrent-version rules only take effect once versioning is configured, so
+  # let the versioning resource settle first.
+  depends_on = [aws_s3_bucket_versioning.this]
+}
