@@ -57,6 +57,8 @@ A runnable example lives in [`examples/basic`](examples/basic).
 | `block_public_access`   | Enable all four S3 public access block settings on the bucket.         | `bool`        | `true`                 |    no    |
 | `object_ownership`      | Object ownership rule. `null` leaves ownership controls unmanaged.      | `string`      | `"BucketOwnerEnforced"` |    no    |
 | `enforce_tls`           | Attach a bucket policy denying any request not made over TLS.          | `bool`        | `true`                 |    no    |
+| `require_latest_tls`    | Add a bucket policy statement denying TLS older than 1.2.              | `bool`        | `false`                |    no    |
+| `policy_statements`     | JSON policy document whose statements are appended to the bucket policy. See [Bucket policy](#bucket-policy). | `string` | `null` | no |
 | `sse_algorithm`         | Server-side encryption algorithm. Either AES256 or aws:kms.            | `string`      | `"AES256"`             |    no    |
 | `kms_key_id`            | ARN of the KMS key used when sse_algorithm is aws:kms.                 | `string`      | `null`                 |    no    |
 | `bucket_key_enabled`    | Use S3 Bucket Keys to cut KMS request cost. Only applies to SSE-KMS.   | `bool`        | `true`                 |    no    |
@@ -65,10 +67,63 @@ A runnable example lives in [`examples/basic`](examples/basic).
 | `lifecycle_rules`       | Lifecycle rules. `[]` leaves the lifecycle configuration unmanaged. See [Lifecycle rules](#lifecycle-rules). | `list(object)` | `[]` | no |
 | `tags`                  | Tags applied to the bucket.                                            | `map(string)` | `{}`                   |    no    |
 
-`enforce_tls` attaches an `aws_s3_bucket_policy` to the bucket. If you manage
-that bucket's policy elsewhere, set `enforce_tls = false` and carry the
-`aws:SecureTransport` deny statement over into your own policy — otherwise the
-two resources will fight over the same bucket.
+## Bucket policy
+
+The module owns the bucket's `aws_s3_bucket_policy`. It is built from, in this
+order:
+
+1. the `DenyUnencryptedTransport` statement, when `enforce_tls = true` (default);
+2. the `DenyOutdatedTls` statement (`s3:TlsVersion < 1.2`), when
+   `require_latest_tls = true`;
+3. every statement in `policy_statements`.
+
+The policy resource exists when at least one of these yields a statement. With
+the defaults the policy JSON is the same as in v1.1.0.
+
+For cross-account or CloudFront access, pass your statements in instead of
+turning `enforce_tls` off:
+
+```hcl
+data "aws_iam_policy_document" "cloudfront_read" {
+  statement {
+    sid       = "AllowCloudFrontRead"
+    actions   = ["s3:GetObject"]
+    # Built from the bucket name: referencing module.s3.arn here would be a cycle.
+    resources = ["arn:aws:s3:::prod-app-assets/*"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "AWS:SourceArn"
+      values   = [aws_cloudfront_distribution.this.arn]
+    }
+  }
+}
+
+module "s3" {
+  source = "github.com/moveeeax/terraform-aws-s3" # add ?ref= with the first release that has this input
+
+  bucket             = "prod-app-assets"
+  require_latest_tls = true
+  policy_statements  = data.aws_iam_policy_document.cloudfront_read.json
+}
+```
+
+`policy_statements` takes any policy document JSON whose `Statement` is a list,
+which is what `aws_iam_policy_document` always renders. Its `Version` is
+ignored. The Sids `DenyUnencryptedTransport` and `DenyOutdatedTls` are
+reserved, and Sids must be unique. `require_latest_tls = true` is recommended
+for new buckets; check first that none of your clients still use TLS 1.0 or
+1.1.
+
+If you manage the bucket's policy elsewhere, set `enforce_tls = false`, leave
+`policy_statements` null and `require_latest_tls` false, and carry the
+`aws:SecureTransport` deny statement over into your own policy. Otherwise the
+two resources fight over the same bucket.
 
 ## Lifecycle rules
 

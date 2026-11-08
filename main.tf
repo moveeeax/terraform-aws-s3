@@ -62,33 +62,60 @@ resource "aws_s3_bucket_ownership_controls" "this" {
 # Deny any request that did not arrive over TLS. Without this, S3 happily
 # serves the bucket over plain HTTP and credentials/objects travel in cleartext.
 locals {
-  tls_only_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "DenyUnencryptedTransport"
-        Effect    = "Deny"
-        Principal = "*"
-        Action    = "s3:*"
-        Resource = [
-          aws_s3_bucket.this.arn,
-          "${aws_s3_bucket.this.arn}/*",
-        ]
-        Condition = {
-          Bool = {
-            "aws:SecureTransport" = "false"
-          }
+  bucket_and_objects = [
+    aws_s3_bucket.this.arn,
+    "${aws_s3_bucket.this.arn}/*",
+  ]
+
+  tls_only_statements = var.enforce_tls ? [
+    {
+      Sid       = "DenyUnencryptedTransport"
+      Effect    = "Deny"
+      Principal = "*"
+      Action    = "s3:*"
+      Resource  = local.bucket_and_objects
+      Condition = {
+        Bool = {
+          "aws:SecureTransport" = "false"
         }
-      },
-    ]
+      }
+    },
+  ] : []
+
+  # TLS 1.0 and 1.1 are still accepted by S3 unless a policy denies them.
+  latest_tls_statements = var.require_latest_tls ? [
+    {
+      Sid       = "DenyOutdatedTls"
+      Effect    = "Deny"
+      Principal = "*"
+      Action    = "s3:*"
+      Resource  = local.bucket_and_objects
+      Condition = {
+        NumericLessThan = {
+          "s3:TlsVersion" = 1.2
+        }
+      }
+    },
+  ] : []
+
+  # Statements are concatenated in HCL rather than through
+  # aws_iam_policy_document so the module's own statements render exactly as
+  # before, and the merged policy stays plan-time known.
+  caller_statements = jsondecode(coalesce(var.policy_statements, "{\"Statement\":[]}")).Statement
+
+  bucket_policy_statements = concat(local.tls_only_statements, local.latest_tls_statements, local.caller_statements)
+
+  bucket_policy = jsonencode({
+    Version   = "2012-10-17"
+    Statement = local.bucket_policy_statements
   })
 }
 
 resource "aws_s3_bucket_policy" "this" {
-  count = var.enforce_tls ? 1 : 0
+  count = length(local.bucket_policy_statements) > 0 ? 1 : 0
 
   bucket = aws_s3_bucket.this.id
-  policy = local.tls_only_policy
+  policy = local.bucket_policy
 
   # The public access block evaluates every PutBucketPolicy call. Creating both
   # in the same apply without ordering can fail with AccessDenied.

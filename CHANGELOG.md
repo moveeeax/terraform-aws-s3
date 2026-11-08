@@ -13,6 +13,19 @@ All notable changes to this module are documented here. The format follows
   rule), via `aws_s3_bucket_lifecycle_configuration`. The resource is created
   only when the list is non-empty, so existing deployments plan no changes and
   lifecycle rules managed elsewhere are not wiped.
+- `policy_statements` input: a JSON policy document whose statements are
+  appended to the module's bucket policy after the TLS deny, so cross-account
+  or CloudFront access no longer requires `enforce_tls = false`. The Sids
+  `DenyUnencryptedTransport` and `DenyOutdatedTls` are reserved.
+- `require_latest_tls` input (default `false`): adds a `DenyOutdatedTls`
+  statement for requests with `s3:TlsVersion` below 1.2.
+
+### Changed
+
+- The bucket policy is now created whenever it has at least one statement
+  (TLS deny, TLS version deny or caller statements), not only when
+  `enforce_tls = true`. With the defaults the policy JSON is byte-for-byte the
+  same as in 1.1.0 and the resource address is unchanged.
 
 ## [1.1.0] - 2026-11-05
 
