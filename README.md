@@ -78,7 +78,7 @@ noncurrent versions are kept forever, so log and backup buckets keep growing.
 
 ```hcl
 module "logs" {
-  source = "github.com/moveeeax/terraform-aws-s3?ref=v1.0.0" # pin to a release tag
+  source = "github.com/moveeeax/terraform-aws-s3" # add ?ref= with the first release that has this input
 
   bucket = "prod-app-logs"
 
