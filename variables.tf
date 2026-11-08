@@ -76,9 +76,50 @@ variable "object_ownership" {
 }
 
 variable "enforce_tls" {
-  description = "Whether to attach a bucket policy denying any request not made over TLS. Set to false only if you manage the bucket policy yourself."
+  description = "Whether to include a bucket policy statement denying any request not made over TLS. Set to false only if you manage the bucket policy yourself; to add your own statements, use policy_statements instead."
   type        = bool
   default     = true
+}
+
+variable "require_latest_tls" {
+  description = "Whether to add a bucket policy statement denying requests made with TLS older than 1.2 (s3:TlsVersion < 1.2)."
+  type        = bool
+  default     = false
+}
+
+variable "policy_statements" {
+  description = "JSON policy document whose statements are appended to the module's bucket policy, after the TLS deny statements. Use it for cross-account or CloudFront access instead of turning off enforce_tls. Its Version is ignored; Statement must be a list. Null adds nothing."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.policy_statements == null || can(jsondecode(var.policy_statements).Statement)
+    error_message = "policy_statements must be a JSON policy document with a Statement key, for example data.aws_iam_policy_document.x.json."
+  }
+
+  validation {
+    condition = var.policy_statements == null || try(
+      !can(keys(jsondecode(var.policy_statements).Statement)) && length(jsondecode(var.policy_statements).Statement) > 0,
+      false,
+    )
+    error_message = "policy_statements must contain a non-empty Statement list."
+  }
+
+  validation {
+    condition = var.policy_statements == null || try(
+      alltrue([for st in jsondecode(var.policy_statements).Statement : !contains(["DenyUnencryptedTransport", "DenyOutdatedTls"], try(st.Sid, ""))]),
+      false,
+    )
+    error_message = "policy_statements must not use the Sids DenyUnencryptedTransport or DenyOutdatedTls, which the module reserves for its own statements."
+  }
+
+  validation {
+    condition = var.policy_statements == null || try(
+      length(compact([for st in jsondecode(var.policy_statements).Statement : try(st.Sid, "")])) == length(distinct(compact([for st in jsondecode(var.policy_statements).Statement : try(st.Sid, "")]))),
+      false,
+    )
+    error_message = "Statement Sids in policy_statements must be unique."
+  }
 }
 
 variable "logging_target_bucket" {
